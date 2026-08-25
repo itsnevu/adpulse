@@ -2,6 +2,7 @@
 // the database for every ad_account of that platform, with a sync_logs
 // audit trail (running -> success | error).
 const pool = require("../db/pool");
+const logger = require("../utils/logger");
 const googleAds = require("./googleAds");
 const metaAds = require("./metaAds");
 const { todayStr, addDaysStr } = require("../utils/dates");
@@ -79,9 +80,10 @@ async function upsertMetrics(rows) {
   return written;
 }
 
-// Run a full sync for one platform across every ad_account of that platform.
+// Run a full sync for one platform across every ad_account of that platform
+// MILIK SATU USER (v1.1: sync di-scope per tenant — userId wajib).
 // Returns the finished sync_logs row.
-async function runSync(platform) {
+async function runSync(platform, userId) {
   const service = PLATFORM_SERVICES[platform];
   if (!service) {
     throw httpError(
@@ -89,17 +91,22 @@ async function runSync(platform) {
       `Platform tidak didukung: ${platform}. Gunakan "google" atau "meta".`
     );
   }
+  if (!userId) {
+    throw new Error("runSync membutuhkan userId (sync di-scope per user).");
+  }
 
   const { rows: logRows } = await pool.query(
-    `INSERT INTO sync_logs (platform, status) VALUES ($1, 'running') RETURNING id`,
-    [platform]
+    `INSERT INTO sync_logs (user_id, platform, status)
+     VALUES ($1, $2, 'running') RETURNING id`,
+    [userId, platform]
   );
   const logId = logRows[0].id;
 
   try {
     const { rows: accounts } = await pool.query(
-      `SELECT * FROM ad_accounts WHERE platform = $1 AND status = 'active'`,
-      [platform]
+      `SELECT * FROM ad_accounts
+       WHERE user_id = $1 AND platform = $2 AND status = 'active'`,
+      [userId, platform]
     );
     if (accounts.length === 0) {
       throw new Error(
@@ -158,7 +165,7 @@ async function runSync(platform) {
        RETURNING *`,
       [logId, err.message]
     );
-    console.error(`[sync] ${platform} gagal:`, err.message);
+    logger.error({ platform, err }, `[sync] ${platform} gagal: ${err.message}`);
     return failRows[0];
   }
 }

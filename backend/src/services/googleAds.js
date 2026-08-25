@@ -18,7 +18,8 @@
 //   confirm which conversion actions the client wants included.
 const config = require("../config");
 const mock = require("./mock");
-const { eachDateStr } = require("../utils/dates");
+const { decryptToken } = require("../utils/crypto");
+const { eachDateStr, isValidDateStr } = require("../utils/dates");
 
 // VERIFY AT ONBOARDING: keep in sync with supported Google Ads API versions.
 const API_VERSION = "v18";
@@ -37,12 +38,16 @@ function useMock() {
 }
 
 // Exchange the long-lived refresh token for a short-lived access token.
-async function getAccessToken() {
+// Refresh token per akun (ad_accounts.refresh_token, terenkripsi AES-256-GCM
+// di DB → didekripsi di sini) lebih diprioritaskan daripada env global.
+async function getAccessToken(account) {
   const g = config.google;
+  const storedRefreshToken =
+    account && account.refresh_token ? decryptToken(account.refresh_token) : null;
   const body = new URLSearchParams({
     client_id: g.clientId,
     client_secret: g.clientSecret,
-    refresh_token: g.refreshToken,
+    refresh_token: storedRefreshToken || g.refreshToken,
     grant_type: "refresh_token",
   });
   const res = await fetch(OAUTH_TOKEN_URL, {
@@ -59,8 +64,8 @@ async function getAccessToken() {
 }
 
 // Run a GAQL query through googleAds:searchStream and return all result rows.
-async function searchStream(customerId, query) {
-  const accessToken = await getAccessToken();
+async function searchStream(customerId, query, account) {
+  const accessToken = await getAccessToken(account);
   const url = `${ADS_HOST}/${API_VERSION}/customers/${customerId}/googleAds:searchStream`;
   const res = await fetch(url, {
     method: "POST",
@@ -113,7 +118,8 @@ async function fetchCampaigns(account) {
     `SELECT campaign.id, campaign.name, campaign.status,
             campaign.advertising_channel_type
      FROM campaign
-     ORDER BY campaign.id`
+     ORDER BY campaign.id`,
+    account
   );
   return rows.map((row) => ({
     external_id: String(row.campaign.id),
@@ -138,6 +144,13 @@ async function fetchDailyMetrics(account, fromDate, toDate) {
     return out;
   }
 
+  // Tanggal diinterpolasi ke string GAQL — validasi ketat YYYY-MM-DD dulu
+  // supaya nilai apa pun selain tanggal murni tidak pernah masuk query.
+  if (!isValidDateStr(fromDate) || !isValidDateStr(toDate)) {
+    throw new Error(
+      `Rentang tanggal sync tidak valid: ${fromDate} s/d ${toDate} (harus YYYY-MM-DD).`
+    );
+  }
   const customerId = String(account.external_id).replace(/-/g, "");
   const rows = await searchStream(
     customerId,
@@ -146,7 +159,8 @@ async function fetchDailyMetrics(account, fromDate, toDate) {
             metrics.cost_micros, metrics.conversions
      FROM campaign
      WHERE segments.date BETWEEN '${fromDate}' AND '${toDate}'
-     ORDER BY segments.date`
+     ORDER BY segments.date`,
+    account
   );
   return rows.map((row) => ({
     campaign_external_id: String(row.campaign.id),

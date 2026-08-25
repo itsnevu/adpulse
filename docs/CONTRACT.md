@@ -35,3 +35,37 @@ email: `demo@adpulse.io` — password: `demo1234`
 
 ## Deploy target (referensi untuk deploy kit)
 VPS Ubuntu 22.04, app di `/home/app/adpulse`, Nginx reverse proxy (`/api` → :4000, `/` → :3000), PM2 untuk proses, certbot SSL.
+
+---
+
+# v1.1 — Hardening Update (2026-08-25)
+
+## Auth (rework)
+- Access token JWT: TTL dari env `JWT_ACCESS_TTL` (default 1h) — tetap Bearer `Authorization`.
+- Refresh token: httpOnly cookie **`adpulse_rt`** (path `/api/auth`, SameSite=Lax, Secure saat production, maxAge `REFRESH_TOKEN_TTL_DAYS` hari). Disimpan di DB sebagai hash sha256 (tabel `refresh_tokens`), **single-use rotation**: tiap refresh menerbitkan token baru + revoke yang lama (`replaced_by`). Reuse token yang sudah revoked = revoke SEMUA refresh token user tsb (deteksi pencurian).
+- `POST /api/auth/login` | `/register` → `{data:{token,user}}` + set cookie `adpulse_rt`.
+- `POST /api/auth/refresh` → pakai cookie (tanpa Bearer) → `{data:{token,user}}` + cookie baru. 401 jika revoked/expired/unknown.
+- `POST /api/auth/logout` → pakai cookie → revoke + clear cookie → `{data:{ok:true}}`.
+- `POST /api/auth/forgot` `{email}` → SELALU `{data:{ok:true}}` (anti user-enumeration). Kirim email link `APP_URL/reset-password?token=...`; jika SMTP kosong → log link ke console. Token acak 32 byte, hash sha256 di `password_reset_tokens`, expiry 60 menit, single-use.
+- `POST /api/auth/reset` `{token,password}` → `{data:{ok:true}}` + revoke semua refresh token user.
+
+## Validasi
+- Semua body & query divalidasi **zod**. Gagal → **422** `{error:{message:"Validasi gagal", details:[{path,message}]}}`. Password min 8 char.
+
+## Rate limiting (429 dengan envelope error)
+- `/api/auth/login|register|forgot|reset`: max `AUTH_RATE_LIMIT_MAX` (default 10) per 15 menit per IP.
+- Seluruh `/api`: max `API_RATE_LIMIT_MAX` (default 300) per menit per IP.
+- `app.set('trust proxy', 1)` — backend di belakang nginx.
+
+## Keamanan lain
+- `helmet` aktif; CORS `credentials:true`, origin APP_URL + localhost:3000.
+- Token ads (`ad_accounts.access_token/refresh_token`) dienkripsi **AES-256-GCM** pakai `TOKEN_ENCRYPTION_KEY` (64 hex). Format ciphertext `enc:v1:<iv>:<tag>:<ct>` (base64). Key kosong: dev = plaintext + warning keras; NODE_ENV=production = tolak boot. Field token TIDAK PERNAH dikembalikan API.
+- Logging **pino** (`LOG_LEVEL`) + pino-http; Sentry opsional via `SENTRY_DSN` (init hanya kalau diisi).
+
+## Frontend
+- `lib/api.js`: endpoint auth pakai `credentials:"include"`; saat 401 non-auth → coba `POST /api/auth/refresh` SEKALI → ulangi request; tetap gagal → hapus token + redirect /login. Logout memanggil `POST /api/auth/logout`.
+- Halaman baru: `/forgot-password`, `/reset-password` (baca `?token=` via useSearchParams DI DALAM `<Suspense>` — wajib utk next build). Link "Lupa password?" di /login.
+
+## Testing & CI
+- backend: `npm test` = `node --test test/` (node:test + supertest), pakai `DATABASE_URL_TEST` (buat db `adpulse_test` bila belum ada — role adpulse superuser di container).
+- CI `.github/workflows/ci.yml`: job backend (service postgres:15, npm ci, migrate, test) + job frontend (npm ci, build). Node 20.

@@ -1,7 +1,18 @@
 # ==========================================================================
 # AdPulse — docker-compose untuk DEV LOKAL saja.
-# Hanya menjalankan PostgreSQL; backend & frontend dijalankan langsung
-# via `npm run dev` di mesin masing-masing developer.
+#
+# Default (`docker compose up -d db`): hanya PostgreSQL; backend & frontend
+# dijalankan langsung via `npm run dev` di mesin masing-masing developer.
+#
+# Profile "full" (v1.1, opsional): seluruh stack dalam Docker —
+#   cp .env.example .env        # sekali, lalu isi minimal JWT_SECRET
+#   docker compose --profile full up -d --build
+#   docker compose exec backend npm run migrate
+#   docker compose exec backend npm run seed
+#   → frontend http://localhost:3000, API http://localhost:4000
+# Catatan: NEXT_PUBLIC_API_URL di-bake saat build image frontend
+# (default http://localhost:4000 — browser mengakses backend via port host).
+#
 # PRODUKSI: JANGAN pakai file ini — gunakan PostgreSQL yang terpasang
 # langsung di VPS (lihat deploy/setup-vps.sh dan deploy/DEPLOYMENT.md).
 # ==========================================================================
@@ -23,6 +34,51 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  backend:
+    profiles: ["full"]
+    build:
+      context: ./backend
+    container_name: adpulse-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      # Override .env: di dalam network compose, host DB adalah "db",
+      # bukan localhost.
+      DATABASE_URL: postgres://adpulse:adpulse@db:5432/adpulse
+      PORT: "4000"
+      # CATATAN: NODE_ENV tetap "development" dari .env (env_file menang atas
+      # ENV di Dockerfile). Itu berarti guard production SENGAJA mati di sini:
+      # TOKEN_ENCRYPTION_KEY/JWT_SECRET kosong tidak menolak boot dan token
+      # ads tersimpan plaintext. Compose ini DEV LOKAL SAJA — untuk produksi
+      # ikuti deploy/DEPLOYMENT.md (PM2 + nginx, NODE_ENV=production).
+    ports:
+      - "4000:4000"
+    volumes:
+      # schema.sql (source of truth) di luar build context backend —
+      # di-mount read-only supaya `npm run migrate` jalan di container.
+      - ./database:/app/database:ro
+
+  frontend:
+    profiles: ["full"]
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4000
+    container_name: adpulse-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    env_file: .env
+    environment:
+      # .env berisi NODE_ENV=development untuk dev lokal — `next start`
+      # butuh production, jadi override di sini.
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
 
 volumes:
   dbdata:

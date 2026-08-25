@@ -1,0 +1,20 @@
+# Jangan bawa dependency lokal — npm ci di dalam image
+node_modules
+
+# Secrets — env masuk lewat env_file / -e, bukan di-bake ke image
+.env
+.env.*
+
+# Log & sampah OS
+*.log
+npm-debug.log*
+.DS_Store
+
+# Docker & dokumentasi tidak dibutuhkan di dalam image
+Dockerfile
+.dockerignore
+README.md
+
+# Test tidak perlu ikut ke image produksi
+test
+coverage

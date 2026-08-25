@@ -20,12 +20,12 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 
-echo "==> [1/7] Update paket & install dependensi dasar..."
+echo "==> [1/8] Update paket & install dependensi dasar..."
 apt-get update -y
 apt-get install -y curl git nginx postgresql postgresql-contrib \
-  certbot python3-certbot-nginx
+  certbot python3-certbot-nginx ufw
 
-echo "==> [2/7] Install Node.js 20 (NodeSource)..."
+echo "==> [2/8] Install Node.js 20 (NodeSource)..."
 if command -v node >/dev/null 2>&1 && node --version | grep -q '^v20\.'; then
   echo "    Node.js 20 sudah terpasang ($(node --version)) — lewati."
 else
@@ -34,17 +34,17 @@ else
 fi
 echo "    node: $(node --version) | npm: $(npm --version)"
 
-echo "==> [3/7] Install PM2 (global)..."
+echo "==> [3/8] Install PM2 (global)..."
 if command -v pm2 >/dev/null 2>&1; then
   echo "    PM2 sudah terpasang ($(pm2 --version)) — lewati."
 else
   npm install -g pm2
 fi
 
-echo "==> [4/7] Pastikan PostgreSQL berjalan..."
+echo "==> [4/8] Pastikan PostgreSQL berjalan..."
 systemctl enable --now postgresql
 
-echo "==> [5/7] Buat role & database PostgreSQL 'adpulse' (skip jika sudah ada)..."
+echo "==> [5/8] Buat role & database PostgreSQL 'adpulse' (skip jika sudah ada)..."
 # Password default 'adpulse' — WAJIB diganti untuk produksi:
 #   sudo -u postgres psql -c "ALTER ROLE adpulse WITH PASSWORD 'password-baru';"
 # lalu samakan DATABASE_URL di backend/.env.
@@ -59,10 +59,21 @@ else
   sudo -u postgres createdb -O adpulse adpulse
 fi
 
-echo "==> [6/7] Siapkan folder aplikasi /home/app..."
+echo "==> [6/8] Firewall (ufw): hanya SSH/HTTP/HTTPS dari luar..."
+# Backend :4000 & frontend :3000 TIDAK dibuka — hanya nginx (80/443) yang
+# menghadap internet; backend bind 127.0.0.1 saat NODE_ENV=production.
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow OpenSSH
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw --force enable
+ufw status verbose
+
+echo "==> [7/8] Siapkan folder aplikasi /home/app..."
 mkdir -p /home/app
 
-echo "==> [7/7] Selesai! Langkah selanjutnya (manual):"
+echo "==> [8/8] Selesai! Langkah selanjutnya (manual):"
 cat <<'NEXT'
 
   ================= LANGKAH SELANJUTNYA =================
@@ -71,8 +82,11 @@ cat <<'NEXT'
   2. Konfigurasi env backend:
        cp /home/app/adpulse/.env.example /home/app/adpulse/backend/.env
        nano /home/app/adpulse/backend/.env
-       (set NODE_ENV=production, JWT_SECRET acak, DATABASE_URL,
-        ANTHROPIC_API_KEY, kredensial ads, SMTP — lihat deploy/DEPLOYMENT.md)
+       (set NODE_ENV=production, JWT_SECRET acak >= 32 char — generate:
+        openssl rand -hex 32 — plus TOKEN_ENCRYPTION_KEY, DATABASE_URL,
+        ANTHROPIC_API_KEY, kredensial ads, SMTP — lihat deploy/DEPLOYMENT.md.
+        Server MENOLAK boot di production bila JWT_SECRET/TOKEN_ENCRYPTION_KEY
+        masih kosong/placeholder.)
   3. Install, migrate, seed:
        cd /home/app/adpulse/backend && npm install && npm run migrate && npm run seed
        cd /home/app/adpulse/frontend && npm install && npm run build

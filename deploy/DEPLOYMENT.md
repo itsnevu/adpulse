@@ -96,8 +96,34 @@ Nilai yang **wajib** diubah untuk produksi:
 | `NODE_ENV` | `production` |
 | `APP_URL` | `https://domain-kamu.com` |
 | `JWT_SECRET` | string acak panjang — generate: `openssl rand -hex 32` |
+| `TOKEN_ENCRYPTION_KEY` | **WAJIB** — 64 hex char, lihat langkah 5a di bawah |
 | `DATABASE_URL` | `postgres://adpulse:PASSWORD_BARU@localhost:5432/adpulse` |
 | `MOCK_ADS` | `false` kalau kredensial ads asli sudah ada; `true` untuk demo |
+
+Variabel hardening v1.1 lain (opsional, default sudah aman): `JWT_ACCESS_TTL`
+(default `1h`), `REFRESH_TOKEN_TTL_DAYS` (default `30`), `AUTH_RATE_LIMIT_MAX`
+(default `10`/15 menit), `API_RATE_LIMIT_MAX` (default `300`/menit),
+`LOG_LEVEL` (default `info`), `SENTRY_DSN` (kosong = Sentry mati).
+
+### 5a. LANGKAH WAJIB — generate `TOKEN_ENCRYPTION_KEY`
+
+Token ads (`ad_accounts.access_token` / `refresh_token`) dienkripsi
+**AES-256-GCM** di database. Kuncinya harus 64 karakter hex (32 byte).
+**Backend menolak boot dengan `NODE_ENV=production` bila key ini kosong.**
+
+```bash
+openssl rand -hex 32
+```
+
+Salin hasilnya ke `backend/.env`:
+
+```env
+TOKEN_ENCRYPTION_KEY=<hasil openssl rand -hex 32>
+```
+
+> **Jangan pernah mengganti key ini setelah ada token tersimpan** — token
+> lama tidak bisa didekripsi lagi (akun ads harus dihubungkan ulang).
+> Simpan salinan key di password manager bersama backup database.
 
 ### Cara mendapatkan tiap kredensial
 
@@ -205,23 +231,29 @@ jalankan sync manual, dan pastikan muncul di **Sync Logs**.
 
 ## 10. Backup harian database
 
-Buat script + jadwal crontab (sebagai root):
+Gunakan script siap pakai [`deploy/backup.sh`](backup.sh): `pg_dump` → gzip ke
+`/home/app/backups/adpulse-YYYY-MM-DD.sql.gz` + rotasi otomatis (hapus backup
+lebih tua dari 14 hari). Tes manual dulu (sebagai root):
 
 ```bash
-mkdir -p /home/app/backups
-crontab -e
+chmod +x /home/app/adpulse/deploy/backup.sh
+/home/app/adpulse/deploy/backup.sh
+ls -lh /home/app/backups/    # harus ada adpulse-<tanggal>.sql.gz
 ```
 
-Tambahkan baris ini (backup tiap jam 02:00, simpan 14 hari terakhir):
+Lalu jadwalkan tiap jam **03:00** via crontab (sebagai root, `crontab -e`):
 
 ```cron
-0 2 * * * sudo -u postgres pg_dump adpulse | gzip > /home/app/backups/adpulse-$(date +\%F).sql.gz && find /home/app/backups -name 'adpulse-*.sql.gz' -mtime +14 -delete
+0 3 * * * /home/app/adpulse/deploy/backup.sh >> /home/app/backups/backup.log 2>&1
 ```
+
+Folder tujuan, nama DB, dan retensi bisa diubah via env `BACKUP_DIR`,
+`DB_NAME`, `RETENTION_DAYS` (lihat komentar di dalam script).
 
 Restore kalau dibutuhkan:
 
 ```bash
-gunzip -c /home/app/backups/adpulse-2026-08-25.sql.gz | sudo -u postgres psql adpulse
+gunzip -c /home/app/backups/adpulse-2026-08-26.sql.gz | sudo -u postgres psql adpulse
 ```
 
 > Saran: sinkronkan folder `/home/app/backups` ke object storage
@@ -243,6 +275,14 @@ cd backend && npm install && npm run migrate
 cd ../frontend && npm install && npm run build
 pm2 restart adpulse-backend adpulse-frontend
 ```
+
+> **Catatan CI:** repo ini punya GitHub Actions
+> ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) yang jalan
+> otomatis di tiap push & pull request ke `main` — test backend terhadap
+> PostgreSQL 15, build frontend, dan syntax check semua file backend.
+> **Deploy hanya bila CI hijau** — cek tab *Actions* di GitHub sebelum
+> `git pull` di VPS. (CI tidak men-deploy otomatis; deploy tetap manual
+> seperti langkah di atas.)
 
 ---
 

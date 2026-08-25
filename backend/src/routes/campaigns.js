@@ -1,12 +1,33 @@
 // Campaign routes: list with 30-day aggregated metrics.
 const express = require("express");
+const { z } = require("zod");
 const pool = require("../db/pool");
-const { httpError, asyncHandler } = require("../utils/errors");
+const { validateQuery } = require("../middleware/validate");
+const { emptyToUndef } = require("../utils/zfields");
+const { asyncHandler } = require("../utils/errors");
 
 const router = express.Router();
 
 const PLATFORMS = ["google", "meta", "linkedin"];
 const STATUSES = ["active", "paused", "ended"];
+
+const listQuerySchema = z.object({
+  platform: emptyToUndef(
+    z
+      .enum(PLATFORMS, {
+        message: `Platform harus salah satu dari: ${PLATFORMS.join(", ")}`,
+      })
+      .optional()
+  ),
+  status: emptyToUndef(
+    z
+      .enum(STATUSES, {
+        message: `Status harus salah satu dari: ${STATUSES.join(", ")}`,
+      })
+      .optional()
+  ),
+  search: emptyToUndef(z.string().optional()),
+});
 
 const num = (v) => Number(v || 0);
 const round2 = (v) => Math.round(num(v) * 100) / 100;
@@ -16,14 +37,9 @@ const round2 = (v) => Math.round(num(v) * 100) / 100;
 // 30 days (spend, impressions, clicks, conversions, ctr, cpc).
 router.get(
   "/",
+  validateQuery(listQuerySchema),
   asyncHandler(async (req, res) => {
     const { platform, status, search } = req.query;
-    if (platform && !PLATFORMS.includes(platform)) {
-      throw httpError(400, `Platform harus salah satu dari: ${PLATFORMS.join(", ")}.`);
-    }
-    if (status && !STATUSES.includes(status)) {
-      throw httpError(400, `Status harus salah satu dari: ${STATUSES.join(", ")}.`);
-    }
 
     const params = [req.user.id];
     const where = ["a.user_id = $1"];

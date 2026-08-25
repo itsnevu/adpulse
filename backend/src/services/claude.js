@@ -4,7 +4,8 @@
 // When ANTHROPIC_API_KEY is empty the service returns a canned fallback
 // insight (model: "mock") so the demo keeps working end-to-end.
 const Anthropic = require("@anthropic-ai/sdk");
-const config = require("../config"); // ensures dotenv is loaded before SDK use
+const config = require("../config");
+const logger = require("../utils/logger"); // ensures dotenv is loaded before SDK use
 
 const SYSTEM_PROMPT = [
   "Kamu adalah analis performa iklan digital senior untuk platform AdPulse.",
@@ -107,7 +108,7 @@ function buildFallbackInsight(stats) {
 // Returns { summary, recommendations, model, tokensUsed }.
 async function generateInsight(prompt, stats) {
   if (!config.anthropicApiKey) {
-    console.log("[claude] ANTHROPIC_API_KEY kosong — memakai insight fallback (mock).");
+    logger.info("[claude] ANTHROPIC_API_KEY kosong — memakai insight fallback (mock).");
     return { ...buildFallbackInsight(stats), model: "mock", tokensUsed: null };
   }
 
@@ -130,7 +131,7 @@ async function generateInsight(prompt, stats) {
   } catch (err) {
     // Keep the product usable even when the AI call fails (rate limit,
     // network, etc.) — log loudly and fall back to the canned insight.
-    console.error("[claude] panggilan API gagal, memakai fallback:", err.message);
+    logger.error({ err }, `[claude] panggilan API gagal, memakai fallback: ${err.message}`);
     return { ...buildFallbackInsight(stats), model: "mock", tokensUsed: null };
   }
 }

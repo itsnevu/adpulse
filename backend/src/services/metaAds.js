@@ -16,6 +16,7 @@
 //   (see CONVERSION_ACTION_TYPES below).
 const config = require("../config");
 const mock = require("./mock");
+const { decryptToken } = require("../utils/crypto");
 const { eachDateStr } = require("../utils/dates");
 
 // VERIFY AT ONBOARDING: keep in sync with supported Graph API versions.
@@ -39,12 +40,20 @@ function useMock() {
   return config.mockAds || !hasCredentials();
 }
 
-async function graphGet(pathname, params) {
+// Access token per akun (ad_accounts.access_token, terenkripsi AES-256-GCM
+// di DB → didekripsi di sini) lebih diprioritaskan daripada env global.
+function resolveAccessToken(account) {
+  const stored =
+    account && account.access_token ? decryptToken(account.access_token) : null;
+  return stored || config.meta.accessToken;
+}
+
+async function graphGet(pathname, params, account) {
   const url = new URL(`${GRAPH_HOST}/${GRAPH_VERSION}/${pathname}`);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
-  url.searchParams.set("access_token", config.meta.accessToken);
+  url.searchParams.set("access_token", resolveAccessToken(account));
   const res = await fetch(url);
   if (!res.ok) {
     const text = await res.text();
@@ -54,9 +63,9 @@ async function graphGet(pathname, params) {
 }
 
 // Follow Graph API cursor pagination until exhausted.
-async function graphGetAll(pathname, params) {
+async function graphGetAll(pathname, params, account) {
   const out = [];
-  let page = await graphGet(pathname, params);
+  let page = await graphGet(pathname, params, account);
   for (;;) {
     if (Array.isArray(page.data)) out.push(...page.data);
     const nextUrl = page.paging && page.paging.next;
@@ -107,10 +116,14 @@ async function fetchCampaigns(account) {
     return mock.generateCampaigns("meta");
   }
   // account.external_id holds the Meta ad account id ("act_..." prefix).
-  const data = await graphGetAll(`${account.external_id}/campaigns`, {
-    fields: "id,name,effective_status,objective",
-    limit: "100",
-  });
+  const data = await graphGetAll(
+    `${account.external_id}/campaigns`,
+    {
+      fields: "id,name,effective_status,objective",
+      limit: "100",
+    },
+    account
+  );
   return data.map((c) => ({
     external_id: String(c.id),
     name: c.name,
@@ -133,13 +146,17 @@ async function fetchDailyMetrics(account, fromDate, toDate) {
     return out;
   }
 
-  const data = await graphGetAll(`${account.external_id}/insights`, {
-    level: "campaign",
-    fields: "campaign_id,date_start,impressions,clicks,spend,actions",
-    time_range: JSON.stringify({ since: fromDate, until: toDate }),
-    time_increment: "1", // one row per campaign per day
-    limit: "500",
-  });
+  const data = await graphGetAll(
+    `${account.external_id}/insights`,
+    {
+      level: "campaign",
+      fields: "campaign_id,date_start,impressions,clicks,spend,actions",
+      time_range: JSON.stringify({ since: fromDate, until: toDate }),
+      time_increment: "1", // one row per campaign per day
+      limit: "500",
+    },
+    account
+  );
   return data.map((row) => ({
     campaign_external_id: String(row.campaign_id),
     date: row.date_start,

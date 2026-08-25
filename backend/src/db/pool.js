@@ -1,6 +1,7 @@
 // PostgreSQL connection pool. Single shared pool for the whole process.
 const { Pool, types } = require("pg");
 const config = require("../config");
+const logger = require("../utils/logger");
 
 // Return DATE columns as plain "YYYY-MM-DD" strings instead of JS Date
 // objects — the whole API contract works with date strings.
@@ -14,7 +15,7 @@ const pool = new Pool({
 
 pool.on("error", (err) => {
   // Errors on idle clients should not crash the process.
-  console.error("[db] unexpected error on idle client:", err.message);
+  logger.error({ err }, `[db] unexpected error on idle client: ${err.message}`);
 });
 
 module.exports = pool;

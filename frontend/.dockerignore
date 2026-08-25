@@ -1,0 +1,19 @@
+# Jangan bawa dependency & build lokal — npm ci + next build di dalam image
+node_modules
+.next
+out
+
+# Secrets — NEXT_PUBLIC_API_URL masuk lewat build-arg, bukan file env
+.env
+.env.local
+.env.*.local
+
+# Log & sampah OS
+*.log
+npm-debug.log*
+.DS_Store
+
+# Docker & dokumentasi tidak dibutuhkan di dalam image
+Dockerfile
+.dockerignore
+README.md

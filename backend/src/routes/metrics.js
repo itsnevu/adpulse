@@ -1,6 +1,9 @@
 // Metrics routes: summary (with deltas), timeseries, by-platform.
 const express = require("express");
+const { z } = require("zod");
 const pool = require("../db/pool");
+const { validateQuery } = require("../middleware/validate");
+const { emptyToUndef, dateStr, fromLteTo } = require("../utils/zfields");
 const { httpError, asyncHandler } = require("../utils/errors");
 const {
   isValidDateStr,
@@ -14,6 +17,33 @@ const router = express.Router();
 
 const PLATFORMS = ["google", "meta", "linkedin"];
 const METRICS = ["spend", "impressions", "clicks", "conversions"];
+
+// Query ?from=&to=&platform= (+ ?metric= utk timeseries). from/to opsional
+// (default 30 hari terakhir) tapi WAJIB format YYYY-MM-DD dan from <= to.
+const rangeShape = {
+  from: emptyToUndef(dateStr.optional()),
+  to: emptyToUndef(dateStr.optional()),
+  platform: emptyToUndef(
+    z
+      .enum(PLATFORMS, {
+        message: `Platform harus salah satu dari: ${PLATFORMS.join(", ")}`,
+      })
+      .optional()
+  ),
+};
+const rangeQuerySchema = z.object(rangeShape).superRefine(fromLteTo);
+const timeseriesQuerySchema = z
+  .object({
+    ...rangeShape,
+    metric: emptyToUndef(
+      z
+        .enum(METRICS, {
+          message: `Metric harus salah satu dari: ${METRICS.join(", ")}`,
+        })
+        .optional()
+    ),
+  })
+  .superRefine(fromLteTo);
 
 const num = (v) => Number(v || 0);
 const round1 = (v) => Math.round(num(v) * 10) / 10;
@@ -73,6 +103,7 @@ function pctDelta(current, previous) {
 // GET /api/metrics/summary?from=&to=&platform=
 router.get(
   "/summary",
+  validateQuery(rangeQuerySchema),
   asyncHandler(async (req, res) => {
     const { from, to, platform } = parseRange(req.query);
 
@@ -109,12 +140,10 @@ router.get(
 // GET /api/metrics/timeseries?from=&to=&platform=&metric=
 router.get(
   "/timeseries",
+  validateQuery(timeseriesQuerySchema),
   asyncHandler(async (req, res) => {
     const { from, to, platform } = parseRange(req.query);
     const metric = req.query.metric || "spend";
-    if (!METRICS.includes(metric)) {
-      throw httpError(400, `Metric harus salah satu dari: ${METRICS.join(", ")}.`);
-    }
 
     const params = [req.user.id, from, to];
     let platformFilter = "";
@@ -155,6 +184,7 @@ router.get(
 // GET /api/metrics/by-platform?from=&to=
 router.get(
   "/by-platform",
+  validateQuery(rangeQuerySchema),
   asyncHandler(async (req, res) => {
     const { from, to } = parseRange(req.query);
     const { rows } = await pool.query(

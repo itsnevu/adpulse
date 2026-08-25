@@ -50,7 +50,13 @@ export default function DashboardLayout({ children }) {
     setSidebarOpen(false);
   }, [pathname]);
 
-  function logout() {
+  async function logout() {
+    try {
+      // Revoke the refresh token on the server and clear the adpulse_rt cookie.
+      await api.post("/api/auth/logout");
+    } catch {
+      // Even if the server call fails, finish the local logout.
+    }
     clearToken();
     router.replace("/login");
   }

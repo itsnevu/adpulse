@@ -1,13 +1,41 @@
 // Ad account routes: list + connect.
+// Token ads (access_token/refresh_token) dienkripsi AES-256-GCM sebelum
+// disimpan dan TIDAK PERNAH dikembalikan oleh API.
 const express = require("express");
+const { z } = require("zod");
 const pool = require("../db/pool");
+const { validateBody } = require("../middleware/validate");
+const { encryptToken } = require("../utils/crypto");
 const { httpError, asyncHandler } = require("../utils/errors");
 
 const router = express.Router();
 
 const PLATFORMS = ["google", "meta", "linkedin"];
 
+const createAccountSchema = z.object({
+  platform: z.enum(PLATFORMS, {
+    message: `Platform harus salah satu dari: ${PLATFORMS.join(", ")}`,
+  }),
+  external_id: z
+    .string({ message: "external_id wajib diisi" })
+    .trim()
+    .min(1, { message: "external_id wajib diisi" }),
+  name: z
+    .string({ message: "Nama akun wajib diisi" })
+    .trim()
+    .min(1, { message: "Nama akun wajib diisi" }),
+  currency: z
+    .string({ message: "currency harus string" })
+    .trim()
+    .min(1, { message: "currency tidak boleh kosong" })
+    .transform((v) => v.toUpperCase())
+    .optional(),
+  access_token: z.string({ message: "access_token harus string" }).optional(),
+  refresh_token: z.string({ message: "refresh_token harus string" }).optional(),
+});
+
 // GET /api/accounts — the authenticated user's ad accounts.
+// Kolom token sengaja tidak pernah di-SELECT.
 router.get(
   "/",
   asyncHandler(async (req, res) => {
@@ -25,30 +53,33 @@ router.get(
 // POST /api/accounts — connect a new ad account.
 router.post(
   "/",
+  validateBody(createAccountSchema),
   asyncHandler(async (req, res) => {
-    const { platform, external_id: externalId, name, currency } = req.body || {};
-    if (!PLATFORMS.includes(platform)) {
-      throw httpError(400, `Platform harus salah satu dari: ${PLATFORMS.join(", ")}.`);
-    }
-    if (!externalId || !String(externalId).trim()) {
-      throw httpError(400, "external_id wajib diisi.");
-    }
-    if (!name || !String(name).trim()) {
-      throw httpError(400, "Nama akun wajib diisi.");
-    }
+    const {
+      platform,
+      external_id: externalId,
+      name,
+      currency,
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    } = req.body;
 
     let row;
     try {
       const result = await pool.query(
-        `INSERT INTO ad_accounts (user_id, platform, external_id, name, currency)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO ad_accounts
+           (user_id, platform, external_id, name, currency,
+            access_token, refresh_token)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id, platform, external_id, name, currency, status, created_at`,
         [
           req.user.id,
           platform,
-          String(externalId).trim(),
-          String(name).trim(),
-          (currency && String(currency).trim().toUpperCase()) || "USD",
+          externalId,
+          name,
+          currency || "USD",
+          accessToken ? encryptToken(accessToken) : null,
+          refreshToken ? encryptToken(refreshToken) : null,
         ]
       );
       row = result.rows[0];

@@ -12,7 +12,10 @@ function requireAuth(req, res, next) {
       .json({ error: { message: "Token tidak ditemukan. Sertakan header Authorization: Bearer <token>." } });
   }
   try {
-    const payload = jwt.verify(token, config.jwtSecret);
+    // Pin algoritma: hanya HS256 (secret simetris) — cegah alg-confusion.
+    const payload = jwt.verify(token, config.jwtSecret, {
+      algorithms: ["HS256"],
+    });
     req.user = {
       id: payload.id,
       email: payload.email,

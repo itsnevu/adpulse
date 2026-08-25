@@ -1,11 +1,21 @@
 // Insight routes: list + generate (Claude AI, with mock fallback).
 const express = require("express");
+const { z } = require("zod");
 const pool = require("../db/pool");
 const insightEngine = require("../services/insightEngine");
-const { httpError, asyncHandler } = require("../utils/errors");
-const { isValidDateStr, todayStr, addDaysStr } = require("../utils/dates");
+const { validateBody } = require("../middleware/validate");
+const { dateStr, fromLteTo } = require("../utils/zfields");
+const { asyncHandler } = require("../utils/errors");
+const { todayStr, addDaysStr } = require("../utils/dates");
 
 const router = express.Router();
+
+const generateSchema = z
+  .object({
+    from: dateStr.optional(),
+    to: dateStr.optional(),
+  })
+  .superRefine(fromLteTo);
 
 // GET /api/insights — latest insights for the authenticated user.
 router.get(
@@ -27,16 +37,10 @@ router.get(
 // POST /api/insights/generate {from, to} — defaults to the last 7 days.
 router.post(
   "/generate",
+  validateBody(generateSchema),
   asyncHandler(async (req, res) => {
-    const body = req.body || {};
-    const to = body.to || todayStr();
-    const from = body.from || addDaysStr(to, -6);
-    if (!isValidDateStr(from) || !isValidDateStr(to)) {
-      throw httpError(400, "Parameter from/to harus format YYYY-MM-DD.");
-    }
-    if (from > to) {
-      throw httpError(400, "Parameter from harus <= to.");
-    }
+    const to = req.body.to || todayStr();
+    const from = req.body.from || addDaysStr(to, -6);
 
     const insight = await insightEngine.generateInsight(req.user.id, from, to);
     res.status(201).json({ data: insight });
