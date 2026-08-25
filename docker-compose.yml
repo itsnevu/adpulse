@@ -1,0 +1,28 @@
+# ==========================================================================
+# AdPulse — docker-compose untuk DEV LOKAL saja.
+# Hanya menjalankan PostgreSQL; backend & frontend dijalankan langsung
+# via `npm run dev` di mesin masing-masing developer.
+# PRODUKSI: JANGAN pakai file ini — gunakan PostgreSQL yang terpasang
+# langsung di VPS (lihat deploy/setup-vps.sh dan deploy/DEPLOYMENT.md).
+# ==========================================================================
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: adpulse-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: adpulse
+      POSTGRES_PASSWORD: adpulse
+      POSTGRES_DB: adpulse
+    ports:
+      - "5432:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U adpulse -d adpulse"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  dbdata:
