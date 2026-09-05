@@ -138,3 +138,36 @@ BEGIN
       UNIQUE (user_id, platform, external_id);
   END IF;
 END $$;
+
+-- ===== v1.2 — Agent AI + MCP =====
+-- Percakapan chat AI disimpan supaya user bisa kembali ke pertanyaan kemarin
+-- dan supaya jawaban bisa diaudit: kolom tool_calls merekam tool APA yang
+-- dipakai untuk menghasilkan jawaban itu. Tanpa jejak itu, "AI bilang spend
+-- naik 30%" tidak bisa ditelusuri ke sumbernya.
+CREATE TABLE IF NOT EXISTS agent_conversations (
+  id         BIGSERIAL PRIMARY KEY,
+  user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL DEFAULT 'Percakapan baru',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_conversations_user
+  ON agent_conversations (user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_messages (
+  id              BIGSERIAL PRIMARY KEY,
+  conversation_id BIGINT NOT NULL REFERENCES agent_conversations(id) ON DELETE CASCADE,
+  role            TEXT NOT NULL CHECK (role IN ('user','assistant')),
+  content         TEXT NOT NULL,
+  -- Jejak tool: [{name, args, ms, failed, source}]. NULL untuk pesan user.
+  tool_calls      JSONB,
+  model           TEXT,
+  -- true = giliran itu dijawab saat armada MCP sedang mati (tool eksternal
+  -- tidak tersedia), supaya jawaban lama tidak dibaca ulang seolah lengkap.
+  degraded        BOOLEAN NOT NULL DEFAULT false,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_messages_conversation
+  ON agent_messages (conversation_id, created_at ASC);

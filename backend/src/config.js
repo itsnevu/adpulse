@@ -131,6 +131,49 @@ const config = Object.freeze({
   // Logging & error tracking
   logLevel: process.env.LOG_LEVEL || "info",
   sentryDsn: process.env.SENTRY_DSN || "",
+
+  // ===== Agent AI + MCP (v1.2) =====
+  // Engine LLM adalah SLOT, bukan vendor. Lihat services/agent/engine.js:
+  // "auto" memilih endpoint OpenAI-compatible bila AGENT_ENGINE_* terisi
+  // lengkap (mengisi tiga env eksplisit = pilihan sadar), kalau tidak jatuh ke
+  // Anthropic memakai ANTHROPIC_API_KEY yang memang sudah ada untuk insight.
+  agent: {
+    provider: (process.env.AGENT_PROVIDER || "auto").toLowerCase(),
+    // Slot OpenAI-compatible — OpenRouter, Groq, Together, vLLM lokal, dst.
+    // Contoh OpenRouter: URL https://openrouter.ai/api/v1, MODEL anthropic/claude-sonnet-4.5
+    engineUrl: process.env.AGENT_ENGINE_URL || "",
+    engineKey: process.env.AGENT_ENGINE_KEY || "",
+    engineModel: process.env.AGENT_ENGINE_MODEL || "",
+    // Berapa putaran tool yang boleh dipakai satu pertanyaan sebelum agent
+    // dipaksa menjawab dari apa yang sudah terkumpul.
+    maxIterations: int(process.env.AGENT_MAX_ITERATIONS, 6),
+    maxTokens: int(process.env.AGENT_MAX_TOKENS, 2000),
+    timeoutMs: int(process.env.AGENT_TIMEOUT_MS, 90000),
+    // Hasil tool dikirim ULANG ke model tiap iterasi berikutnya, jadi hasil
+    // tanpa batas ditagih berkali-kali dan biaya satu percakapan tumbuh
+    // kuadratik. Dua batas ini yang menjaganya tetap linear.
+    maxToolChars: int(process.env.AGENT_MAX_TOOL_CHARS, 4000),
+    maxToolCharsTotal: int(process.env.AGENT_MAX_TOOL_CHARS_TOTAL, 24000),
+    // Riwayat percakapan yang ikut dikirim ke model tiap giliran.
+    historyLimit: int(process.env.AGENT_HISTORY_LIMIT, 20),
+  },
+
+  // Armada MCP eksternal (backend/mcp.json). Slot WhatsApp diisi di sini.
+  mcp: {
+    configPath: process.env.MCP_CONFIG_PATH || "",
+    connectTimeoutMs: int(process.env.MCP_CONNECT_TIMEOUT_MS, 8000),
+    toolTimeoutMs: int(process.env.MCP_TOOL_TIMEOUT_MS, 15000),
+    disabled: bool(process.env.MCP_DISABLED, false),
+  },
+
+  // Tool scraping first-party.
+  scrape: {
+    maxBytes: int(process.env.SCRAPE_MAX_BYTES, 2000000),
+    timeoutMs: int(process.env.SCRAPE_TIMEOUT_MS, 15000),
+    // Buka HANYA untuk dev yang memang perlu mengambil dari localhost.
+    // Di production ini adalah pintu SSRF — biarkan false.
+    allowPrivateHosts: bool(process.env.SCRAPE_ALLOW_PRIVATE_HOSTS, false),
+  },
 });
 
 module.exports = config;

@@ -10,6 +10,7 @@ const campaignRoutes = require("./campaigns");
 const metricRoutes = require("./metrics");
 const insightRoutes = require("./insights");
 const syncRoutes = require("./sync");
+const agentRoutes = require("./agent");
 
 const router = express.Router();
 
@@ -20,5 +21,6 @@ router.use("/campaigns", requireAuth, campaignRoutes);
 router.use("/metrics", requireAuth, metricRoutes);
 router.use("/insights", requireAuth, insightRoutes);
 router.use("/sync", requireAuth, syncRoutes);
+router.use("/agent", requireAuth, agentRoutes);
 
 module.exports = router;

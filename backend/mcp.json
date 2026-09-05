@@ -1,0 +1,23 @@
+{
+  "//": "Server MCP eksternal untuk agent AdPulse. File ini IKUT TER-COMMIT, jadi jangan pernah menaruh token di sini — pakai 'envFrom' (untuk server stdio) atau 'headersFrom' (untuk server HTTP) yang menunjuk NAMA env var, bukan nilainya. Server dengan 'disabled': true dilewati sepenuhnya. Tool yang namanya terlihat menulis (send/post/delete/create/...) otomatis disaring keluar kecuali server ini mencantumkan 'allowedTools' — itu yang mencegah server WhatsApp diam-diam memberi model kemampuan mengirim pesan.",
+
+  "mcpServers": {
+    "whatsapp": {
+      "//": "SLOT WHATSAPP — belum diisi. Aktifkan dengan mengganti 'disabled' jadi false lalu isi command/args sesuai server MCP WhatsApp yang dipakai. Contoh untuk server berbasis npx: \"command\": \"npx\", \"args\": [\"-y\", \"nama-paket-mcp-whatsapp\"], \"envFrom\": [\"WHATSAPP_API_TOKEN\"]. Untuk WhatsApp Cloud API resmi via server HTTP, pakai \"url\" + \"headersFrom\". Biarkan allowedTools kosong/absen supaya hanya tool baca yang lolos; isi eksplisit kalau memang ingin agent bisa mengirim pesan.",
+      "disabled": true,
+      "command": "npx",
+      "args": ["-y", "GANTI-DENGAN-PAKET-MCP-WHATSAPP"],
+      "envFrom": ["WHATSAPP_API_TOKEN", "WHATSAPP_PHONE_NUMBER_ID"]
+    },
+
+    "scraper": {
+      "//": "SLOT SCRAPING LANJUTAN — opsional. AdPulse sudah punya tool scraping first-party (web_scrape) yang jalan tanpa API key, tapi tidak merender JavaScript. Aktifkan slot ini kalau butuh render JS / extract terstruktur, mis. Firecrawl. Ganti url-nya lalu simpan API key-nya di env FIRECRAWL_API_KEY.",
+      "disabled": true,
+      "type": "http",
+      "url": "https://GANTI-DENGAN-URL-MCP-SCRAPER/mcp",
+      "headersFrom": {
+        "Authorization": "FIRECRAWL_API_KEY"
+      }
+    }
+  }
+}
