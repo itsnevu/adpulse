@@ -203,19 +203,33 @@ router.post(
       [conversationId, message]
     );
 
+    // Klien menutup koneksi (tab ditutup, user membatalkan) harus ikut
+    // menghentikan giliran — kalau tidak, panggilan model dan tool tetap jalan
+    // dan tetap ditagih untuk jawaban yang tidak akan pernah dibaca siapa pun.
+    //
+    // Express 4 tidak menyediakan req.signal, jadi sinyalnya dibangun dari
+    // event 'close' pada response. Dijaga dengan writableEnded: 'close' juga
+    // menyala pada penyelesaian yang normal, dan membatalkan di situ berarti
+    // membatalkan request yang justru baru saja berhasil.
+    const controller = new AbortController();
+    const onClose = () => {
+      if (!res.writableEnded) controller.abort();
+    };
+    res.on("close", onClose);
+
     let result;
     try {
       result = await runner.reply({
         userId: req.user.id,
         message,
         history: historyRows,
-        // Klien menutup koneksi (tab ditutup, user membatalkan) harus ikut
-        // menghentikan giliran — kalau tidak, tool tetap jalan dan tetap ditagih.
-        signal: req.signal || undefined,
+        signal: controller.signal,
       });
     } catch (err) {
       logger.error({ err, conversationId }, "[agent] giliran chat gagal");
       throw err;
+    } finally {
+      res.off("close", onClose);
     }
 
     const { rows: replyRows } = await pool.query(

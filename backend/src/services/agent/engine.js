@@ -134,7 +134,7 @@ function toAnthropicMessages(messages) {
   return out;
 }
 
-async function completeAnthropic({ system, messages, tools, maxTokens, model, signal }) {
+async function completeAnthropic({ system, messages, tools, toolChoice, maxTokens, model, signal }) {
   const client = getAnthropicClient();
   const response = await client.messages.create(
     {
@@ -143,6 +143,11 @@ async function completeAnthropic({ system, messages, tools, maxTokens, model, si
       temperature: 0.3,
       system,
       messages: toAnthropicMessages(messages),
+      // Definisi tool tetap dikirim meski giliran ini dilarang memakai tool.
+      // Transkrip yang memuat blok tool_use/tool_result TIDAK valid tanpa
+      // daftar tool-nya — menghilangkan `tools` di pass terakhir justru
+      // membuat jaring pengaman terakhir itu yang gagal. Larangannya
+      // disampaikan lewat tool_choice, bukan dengan menghapus definisinya.
       ...(tools && tools.length
         ? {
             tools: tools.map((tool) => ({
@@ -150,6 +155,7 @@ async function completeAnthropic({ system, messages, tools, maxTokens, model, si
               description: tool.description,
               input_schema: tool.parameters || { type: "object", properties: {} },
             })),
+            tool_choice: { type: toolChoice === "none" ? "none" : "auto" },
           }
         : {}),
     },
@@ -220,7 +226,7 @@ function toOpenAiMessages(system, messages) {
   return out;
 }
 
-async function completeOpenAi({ system, messages, tools, maxTokens, model, signal }) {
+async function completeOpenAi({ system, messages, tools, toolChoice, maxTokens, model, signal }) {
   const client = getOpenAiClient();
   const response = await client.chat.completions.create(
     {
@@ -239,7 +245,9 @@ async function completeOpenAi({ system, messages, tools, maxTokens, model, signa
                 parameters: tool.parameters || { type: "object", properties: {} },
               },
             })),
-            tool_choice: "auto",
+            // Sama seperti driver Anthropic: pesan bertipe tool tetap butuh
+            // definisi tool-nya ada, jadi yang dimatikan adalah pilihannya.
+            tool_choice: toolChoice === "none" ? "none" : "auto",
           }
         : {}),
     },
@@ -274,7 +282,7 @@ async function completeOpenAi({ system, messages, tools, maxTokens, model, signa
 
 // Satu panggilan ke model, driver apa pun. Melempar bila engine tidak ada —
 // pemanggil wajib cek engineConfigured() lebih dulu.
-async function complete({ system, messages, tools, maxTokens, signal }) {
+async function complete({ system, messages, tools, toolChoice, maxTokens, signal }) {
   const resolved = resolveProvider();
   if (!resolved) {
     throw new Error(
@@ -287,6 +295,7 @@ async function complete({ system, messages, tools, maxTokens, signal }) {
     system,
     messages,
     tools,
+    toolChoice: toolChoice || "auto",
     maxTokens: maxTokens || config.agent.maxTokens,
     model: resolved.model,
     signal,

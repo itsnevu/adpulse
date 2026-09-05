@@ -303,3 +303,75 @@ pm2 restart adpulse-backend adpulse-frontend
 
 Kalau masih buntu: `pm2 logs` + `journalctl -u nginx -n 50` biasanya cukup
 untuk menemukan akar masalah.
+
+---
+
+## AI Assistant (agent MCP) — v1.2
+
+### 1. Pilih engine LLM
+
+Engine adalah **slot**, bukan vendor tetap. Cukup salah satu:
+
+```bash
+# Opsi A — Anthropic (pakai key yang sudah ada untuk insight harian)
+ANTHROPIC_API_KEY=sk-ant-...
+CLAUDE_MODEL=claude-sonnet-5
+
+# Opsi B — endpoint OpenAI-compatible, mis. OpenRouter
+AGENT_ENGINE_URL=https://openrouter.ai/api/v1
+AGENT_ENGINE_KEY=sk-or-v1-...
+AGENT_ENGINE_MODEL=anthropic/claude-sonnet-4.5
+```
+
+`AGENT_PROVIDER=auto` (default) memakai Opsi B bila ketiga env-nya terisi, kalau
+tidak jatuh ke Opsi A. Tanpa keduanya, halaman AI Assistant tetap terbuka dan
+menampilkan pesan bahwa engine belum diatur — bukan error 500.
+
+### 2. Migrasi tabel baru
+
+```bash
+cd /home/app/adpulse/backend && npm run migrate
+```
+
+Menambah `agent_conversations` + `agent_messages` (idempoten — `CREATE TABLE IF
+NOT EXISTS`, aman dijalankan ulang).
+
+### 3. Server MCP eksternal (opsional)
+
+Daftar servernya di `backend/mcp.json`. Slot `whatsapp` dan `scraper` sudah ada
+tapi `"disabled": true` sampai diisi.
+
+> **Jangan pernah menaruh token di `mcp.json`** — file itu ikut ter-commit.
+> Pakai `envFrom` (server stdio) atau `headersFrom` (server HTTP) yang menunjuk
+> NAMA env var, lalu isi nilainya di `.env`.
+
+Untuk server stdio yang dijalankan lewat `npx`, pastikan node/npm tersedia untuk
+user yang menjalankan PM2, dan ingat server MCP adalah **proses anak** — mereka
+hanya mewarisi env var yang dideklarasikan di `envFrom`, bukan seluruh `.env`.
+
+Matikan seluruh armada dengan `MCP_DISABLED=true`. Agent tetap jalan penuh
+dengan tool AdPulse (data iklan + scraping first-party).
+
+### 4. Verifikasi setelah deploy
+
+```bash
+# ?probe=1 memaksa armada MCP benar-benar boot, bukan sekadar membaca env
+curl -s -H "Authorization: Bearer <token>" \
+  'https://domain-kamu.com/api/agent/health?probe=1' | jq
+```
+
+Yang perlu dilihat:
+- `engine.configured: true` dan `engine.provider` sesuai yang kamu pilih.
+- `mcp.state`: `up` (server tersambung), `empty` (tidak ada server aktif — normal
+  kalau semua slot masih disabled), `cold` (belum pernah dinyalakan), atau
+  `down` disertai `mcp.error`.
+
+### Troubleshooting
+
+| Gejala | Kemungkinan sebab | Tindakan |
+|---|---|---|
+| Chat menjawab 503 "Engine AI belum dikonfigurasi" | Tidak ada `ANTHROPIC_API_KEY` maupun `AGENT_ENGINE_*` lengkap | Isi salah satu opsi di atas, restart PM2 |
+| Jawaban selalu ditandai "sebagian tool eksternal mati" | Server MCP gagal connect | Cek `mcp.error` di `/api/agent/health?probe=1`; server yang mati tidak menghentikan chat |
+| Tool MCP tertentu tidak muncul | Namanya terlihat menulis (`send`/`delete`/...) sehingga tersaring | Tambahkan `"allowedTools": ["nama_tool"]` di entri server tsb — opt-in eksplisit |
+| `web_scrape` menolak sebuah URL | Host me-resolve ke alamat internal | Ini guard SSRF bekerja. Jangan set `SCRAPE_ALLOW_PRIVATE_HOSTS=true` di production |
+| Jawaban terpotong / tool berhenti di tengah | `AGENT_MAX_ITERATIONS` atau anggaran output tool habis | Naikkan `AGENT_MAX_ITERATIONS` / `AGENT_MAX_TOOL_CHARS_TOTAL`, atau persempit pertanyaan |

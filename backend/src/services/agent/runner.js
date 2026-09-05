@@ -193,14 +193,17 @@ async function reply({ userId, message, history = [], signal }) {
       }
     }
 
-    // Iterasi habis tapi model masih memanggil tool: satu pass terakhir tanpa
-    // tool, supaya user dapat kesimpulan terbaik dari yang sudah terkumpul
-    // alih-alih tidak dapat apa-apa.
+    // Iterasi habis tapi model masih memanggil tool: satu pass terakhir dengan
+    // tool DILARANG dipakai, supaya user dapat kesimpulan terbaik dari yang
+    // sudah terkumpul alih-alih tidak dapat apa-apa. Definisi tool tetap
+    // dikirim (lihat engine.js) — transkrip yang memuat tool_use tidak valid
+    // tanpa itu; yang dimatikan adalah pilihannya lewat tool_choice.
     if (!text) {
       const response = await engine.complete({
         system,
         messages,
-        tools: null,
+        tools: schemas,
+        toolChoice: "none",
         maxTokens: config.agent.maxTokens,
         signal: controller.signal,
       });

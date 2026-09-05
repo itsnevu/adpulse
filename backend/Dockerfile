@@ -24,6 +24,12 @@ RUN npm ci --omit=dev && npm cache clean --force
 # Salin source code
 COPY --chown=node:node src ./src
 
+# Daftar server MCP eksternal. Tanpa file ini armada MCP kosong (agent tetap
+# jalan dengan tool AdPulse saja) — jadi ini bukan syarat boot, tapi tanpa
+# disalin, slot WhatsApp/scraper yang sudah dikonfigurasi diam-diam hilang di
+# container dan gejalanya hanya "tool-nya kok tidak ada".
+COPY --chown=node:node mcp.json ./
+
 USER node
 
 EXPOSE 4000
