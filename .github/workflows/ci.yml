@@ -43,7 +43,9 @@ jobs:
       APP_URL: http://localhost:3000
       DATABASE_URL: postgres://adpulse:adpulse@localhost:5432/adpulse
       # Test suite membuat database adpulse_test sendiri bila belum ada
-      # (user adpulse = superuser di service container).
+      # (user adpulse = superuser di service container) — lihat catatan pada
+      # langkah "Migrate database" soal kenapa langkah itu TIDAK boleh ikut
+      # NODE_ENV=test.
       DATABASE_URL_TEST: postgres://adpulse:adpulse@localhost:5432/adpulse_test
       JWT_SECRET: ci-only-jwt-secret-not-for-production
       JWT_ACCESS_TTL: 1h
@@ -71,6 +73,17 @@ jobs:
         run: npm ci
 
       - name: Migrate database (database/schema.sql)
+        # NODE_ENV di-override KHUSUS langkah ini. Dengan NODE_ENV=test,
+        # src/config.js memilih DATABASE_URL_TEST (adpulse_test) — database
+        # yang belum ada pada titik ini, karena yang membuatnya adalah test
+        # helper di langkah berikutnya. Itulah kenapa langkah ini selalu gagal
+        # dengan 'database "adpulse_test" does not exist' sejak CI dibuat.
+        #
+        # Diarahkan ke `adpulse` (dibuat oleh service container), sehingga
+        # langkah ini punya makna sendiri: membuktikan schema.sql apply bersih
+        # ke database yang benar-benar kosong.
+        env:
+          NODE_ENV: development
         run: npm run migrate
 
       - name: Run tests (node --test + supertest)
