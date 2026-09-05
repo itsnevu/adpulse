@@ -320,30 +320,33 @@ export default function AgentPage() {
               <li className="px-2 py-3 text-xs text-gray-400">Belum ada percakapan.</li>
             ) : (
               conversations.map((conversation) => (
-                <li key={conversation.id}>
+                // Tombol hapus adalah SAUDARA tombol percakapan, bukan anaknya:
+                // elemen interaktif bersarang itu HTML tidak sah, tidak bisa
+                // dicapai keyboard dengan benar, dan satu klik bisa memicu dua
+                // aksi sekaligus (buka + hapus).
+                <li
+                  key={conversation.id}
+                  className={`group flex items-center gap-1 rounded-lg transition ${
+                    activeId === conversation.id ? "bg-blue-50" : "hover:bg-gray-50"
+                  }`}
+                >
                   <button
                     type="button"
                     onClick={() => openConversation(conversation.id)}
                     aria-current={activeId === conversation.id ? "true" : undefined}
-                    className={`group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition ${
-                      activeId === conversation.id
-                        ? "bg-blue-50 text-[#1f5ea8]"
-                        : "text-gray-600 hover:bg-gray-50"
+                    className={`min-w-0 flex-1 truncate rounded-lg px-2.5 py-2 text-left text-xs transition ${
+                      activeId === conversation.id ? "text-[#1f5ea8]" : "text-gray-600"
                     }`}
                   >
-                    <span className="min-w-0 flex-1 truncate">{conversation.title}</span>
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`Hapus percakapan ${conversation.title}`}
-                      onClick={(e) => removeConversation(conversation.id, e)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") removeConversation(conversation.id, e);
-                      }}
-                      className="shrink-0 rounded p-1 text-gray-300 opacity-0 transition hover:text-red-600 focus:opacity-100 group-hover:opacity-100"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    </span>
+                    {conversation.title}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Hapus percakapan ${conversation.title}`}
+                    onClick={(e) => removeConversation(conversation.id, e)}
+                    className="mr-1 shrink-0 rounded p-1 text-gray-300 opacity-0 transition hover:text-red-600 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-[#2a78d6]/30 group-hover:opacity-100"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 </li>
               ))
