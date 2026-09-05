@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  Bot,
   LayoutDashboard,
   LogOut,
   Megaphone,
@@ -18,6 +19,7 @@ import Logo from "@/components/Logo";
 
 const NAV = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
+  { href: "/dashboard/agent", label: "AI Assistant", icon: Bot },
   { href: "/dashboard/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/dashboard/insights", label: "AI Insights", icon: Sparkles },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },

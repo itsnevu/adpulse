@@ -69,3 +69,59 @@ VPS Ubuntu 22.04, app di `/home/app/adpulse`, Nginx reverse proxy (`/api` → :4
 ## Testing & CI
 - backend: `npm test` = `node --test test/` (node:test + supertest), pakai `DATABASE_URL_TEST` (buat db `adpulse_test` bila belum ada — role adpulse superuser di container).
 - CI `.github/workflows/ci.yml`: job backend (service postgres:15, npm ci, migrate, test) + job frontend (npm ci, build). Node 20.
+
+---
+
+# v1.2 — Agent AI + MCP (2026-09-06)
+
+Satu UI chat yang bisa membaca Meta Ads, Google Ads, scraping web, dan tool MCP
+eksternal (slot WhatsApp). Halaman landing dihapus — `/` sekarang redirect
+(ada token → `/dashboard`, tidak ada → `/login`); file lamanya diarsipkan di
+`_archive/landing/page.jsx`.
+
+## Endpoints baru (semua butuh JWT)
+- `GET    /api/agent/health?probe=1` → `{ data: { engine: {configured, provider, model, baseUrl}, mcp: {state, tools, servers, error}, firstPartyTools } }`. `state` = `cold|up|empty|down`. `?probe=1` memaksa armada MCP boot supaya jawabannya "benar-benar hidup?" bukan "env-nya terisi?".
+- `GET    /api/agent/tools` → `{ data: { tools: [{name, description, source: "adpulse"|"mcp", server?, mutating}], mcp } }`
+- `GET    /api/agent/conversations?limit=` → daftar percakapan user (terbaru dulu) + `message_count`
+- `GET    /api/agent/conversations/:id` → `{ data: { conversation, messages } }`
+- `DELETE /api/agent/conversations/:id` → `{ data: { ok: true } }`
+- `POST   /api/agent/chat` `{message, conversation_id?}` → `{ data: { conversation_id, user_message, message, degraded, usage, provider } }`. Tanpa `conversation_id` percakapan baru dibuat (judul = 60 karakter pertama pesan). Pesan maksimal 8000 karakter (422 bila lewat).
+
+## Engine LLM = SLOT, bukan vendor
+`AGENT_PROVIDER`: `auto` (default) | `anthropic` | `openai`.
+- `auto` memakai endpoint OpenAI-compatible bila `AGENT_ENGINE_URL` + `AGENT_ENGINE_KEY` + `AGENT_ENGINE_MODEL` terisi lengkap, kalau tidak jatuh ke `ANTHROPIC_API_KEY`. Alasannya: mengisi tiga env eksplisit adalah pilihan sadar, sedangkan `ANTHROPIC_API_KEY` sudah ada untuk insight harian sehingga keberadaannya bukan sinyal pilihan.
+- OpenRouter cukup diisi lewat env: `AGENT_ENGINE_URL=https://openrouter.ai/api/v1`, `AGENT_ENGINE_MODEL=anthropic/claude-sonnet-4.5`.
+- Tanpa keduanya, endpoint chat menjawab **503** dengan pesan yang menyebut env apa yang kurang — bukan 500.
+
+## Tool first-party (selalu ada, termasuk saat armada MCP mati)
+`adpulse_metrics_summary`, `adpulse_by_platform`, `adpulse_timeseries`,
+`adpulse_campaigns`, `adpulse_accounts`, `adpulse_sync_logs`,
+`google_ads_live_metrics`, `meta_ads_live_metrics`, `adpulse_run_sync` (satu-satunya yang menulis),
+`web_scrape`.
+
+Semua di-scope lewat `ctx.userId` yang berasal dari JWT — model tidak pernah
+memilih user id, jadi tidak ada jalan menanyakan data user lain. Angka dibaca
+dari `services/adsQuery.js`, sumber SQL yang sama dengan endpoint dashboard.
+
+## Armada MCP (`backend/mcp.json`)
+- Format sama dengan mcp.json pada umumnya: `command`+`args`+`envFrom` (stdio) atau `url`+`type`+`headersFrom` (HTTP).
+- **Token tidak pernah ditulis di mcp.json** (file ini ter-commit): `envFrom` dan `headersFrom` menunjuk NAMA env var.
+- Slot bawaan: `whatsapp` dan `scraper`, dua-duanya `"disabled": true` sampai diisi.
+- Tool yang namanya terlihat menulis (`send`/`delete`/`create`/...) disaring keluar kecuali server mencantumkan `allowedTools` — ini yang mencegah server WhatsApp diam-diam memberi model kemampuan mengirim pesan.
+- Server yang gagal connect **tidak** mematikan chat: giliran itu jalan dengan tool first-party saja, respons diberi `degraded: true`, dan system prompt diberi tahu tool apa yang sedang hilang supaya model tidak mengarang isinya.
+- `MCP_DISABLED=true` mematikan seluruh armada.
+
+## Tabel baru
+- `agent_conversations` (id, user_id, title, created_at, updated_at)
+- `agent_messages` (id, conversation_id, role `user|assistant`, content, `tool_calls` JSONB, model, degraded, created_at)
+
+`tool_calls` merekam `[{name, args, ms, failed, source}]` per jawaban — tanpa
+jejak itu "AI bilang spend naik 30%" tidak bisa ditelusuri ke sumbernya.
+
+## Batas biaya
+Hasil tool dikirim ULANG ke model di setiap iterasi berikutnya, jadi hasil tanpa
+batas ditagih berkali-kali dan biaya satu pertanyaan tumbuh kuadratik terhadap
+jumlah putaran. `AGENT_MAX_TOOL_CHARS` (per tool) dan `AGENT_MAX_TOOL_CHARS_TOTAL`
+(per request) yang menahannya linear; `AGENT_MAX_ITERATIONS` membatasi jumlah
+putaran, dan bila habis dilakukan satu pass terakhir TANPA tool supaya user tetap
+dapat kesimpulan, bukan layar kosong.

@@ -53,6 +53,10 @@ platform tanpa membuka banyak tab, plus rekomendasi optimasi otomatis.
   tercatat di `email_logs`.
 - **Mock mode** — `MOCK_ADS=true` menghasilkan data sample deterministik agar
   demo end-to-end jalan tanpa kredensial ads asli.
+- **AI Assistant (agent MCP)** — satu kotak chat yang bisa membaca data AdPulse,
+  menarik metrik live Google/Meta Ads, membaca halaman web, dan memanggil tool
+  MCP eksternal (slot WhatsApp). Setiap jawaban menyimpan jejak tool apa yang
+  dipakai, jadi angkanya bisa ditelusuri.
 - **Auth JWT + refresh token** — register/login/logout, lupa & reset password;
   access token berumur pendek (`JWT_ACCESS_TTL`, default 1 jam) + refresh token
   httpOnly cookie dengan single-use rotation (lihat [Keamanan](#keamanan-v11)).
@@ -65,6 +69,7 @@ adpulse/
 │   └── workflows/
 │       └── ci.yml      # CI: test backend + build frontend + syntax check
 ├── backend/            # Express API (Node 20, CommonJS) — port 4000
+│   ├── mcp.json        # Server MCP eksternal (slot WhatsApp & scraper)
 │   └── Dockerfile      # Image backend (profile "full")
 ├── frontend/           # Next.js App Router (JS/JSX) + Tailwind — port 3000
 │   └── Dockerfile      # Image frontend multi-stage (profile "full")
@@ -147,6 +152,9 @@ Salin `.env.example` → `backend/.env`, lalu isi. Ringkasan variabel utama:
 | `SYNC_CRON` | Jadwal sync ads (default per 4 jam) | Opsional |
 | `INSIGHT_EMAIL_CRON` | Jadwal email insight (default 12:00) | Opsional |
 | `NEXT_PUBLIC_API_URL` | Base URL API untuk frontend | Ya (default `http://localhost:4000`) |
+| `AGENT_PROVIDER` | Engine agent: `auto`/`anthropic`/`openai` | Opsional (default `auto`) |
+| `AGENT_ENGINE_URL/_KEY/_MODEL` | Slot endpoint OpenAI-compatible (mis. OpenRouter) | Opsional |
+| `MCP_DISABLED` | Matikan seluruh armada MCP eksternal | Opsional (default `false`) |
 
 Daftar lengkap + nilai default ada di [`.env.example`](.env.example)
 (khusus `NEXT_PUBLIC_API_URL` untuk frontend: salin
@@ -209,6 +217,9 @@ Status terlihat di badge atas README dan tab **Actions** di GitHub.
 
 ## Roadmap — Phase 2
 
+- **Isi slot WhatsApp** — `backend/mcp.json` sudah menyediakan slotnya
+  (`"disabled": true`); tinggal tunjuk ke server MCP WhatsApp dan isi token
+  lewat env. Arsitekturnya tidak perlu berubah.
 - **LinkedIn Ads** — platform ketiga (skema DB sudah menyiapkannya).
 - **OAuth self-service** — client menghubungkan akun ads sendiri tanpa
   copy-paste token manual.

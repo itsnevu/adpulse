@@ -24,8 +24,12 @@ const logger = require("../../utils/logger");
 // pembaca: server eksternal harus opt-in lewat "allowedTools" di mcp.json
 // kalau memang ingin mengekspos tool yang menulis/mengirim. Ini yang mencegah
 // server WhatsApp diam-diam memberi model kemampuan mengirim pesan.
+//
+// Batas di KEDUA sisi kata itu penting: tanpa batas penutup, "get_sender_info"
+// ikut tersaring karena mengandung "_send", dan tool baca yang sah hilang
+// diam-diam — armada terlihat lebih miskin tanpa ada yang tahu kenapa.
 const MUTATING_TOOL =
-  /(^|[._-])(send|post|write|delete|remove|create|update|transfer|sign|approve|execute|deploy|publish|reply)/i;
+  /(^|[._-])(send|post|write|delete|remove|create|update|transfer|sign|approve|execute|deploy|publish|reply)([._-]|$)/i;
 
 // Path mcp.json: env MCP_CONFIG_PATH, atau backend/mcp.json.
 function configPath() {
